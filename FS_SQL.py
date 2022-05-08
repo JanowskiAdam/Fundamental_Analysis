@@ -47,7 +47,7 @@ def download_statements(tickers_list=get_tickers_list_in_db):
     '''
     list_length = len(tickers_list)
     print(f'List of {list_length} tickers to update:')
-    print(tickers_list) # For testing
+    print(tickers_list)
     # create databases iterating through the list of companies
     main_loop = 0
     runtime_loop = 1
@@ -88,63 +88,6 @@ def download_statements(tickers_list=get_tickers_list_in_db):
     print(f'{"#"*45} On process {error_counter} errors  occured. {"#"*45}')
     if error_list:
         print(f'Error list = {error_list}')
-
-# fun. update_all_tickers, update_ticker unnecessary and to delete
-    def update_all_tickers():
-        ''' Function updating statments for all 30 comapnies in Financial_Statements_SQL.
-        Updating database with function "save_table" inside "FA_SQL" class
-        Loop is preceeding twice, every second ticker from the list, after update ticker is removed from list
-        If loop takes more than 5 min, through exception loop is restarted from the begginig of remaining list
-        '''
-        #connecting to database
-        cursor = sqlite3.connect('Financial_Statements_SQL.db').cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        statements_list = cursor.fetchall()
-        cursor.close()
-        #creating list of tickers
-        tickers_list=[]
-        for statement in statements_list:
-            tickers_list.append(statement[0].split("_",1)[0])
-        tickers_list = sorted(list(set(tickers_list)))
-        list_length = len(tickers_list)
-        runtime_loop = 1
-        ticker_loop = 1
-        print(f'List of {list_length} tickers to update:') # For testing
-        print(tickers_list) # For testing
-        while tickers_list:
-            for ticker in tickers_list:
-                try:
-                    with timeout(200):
-                        Statements = ['BalanceSheet', 'CashFlow', 'IncomeStatement']
-                        for j in Statements:
-                            ex1 = FS_SQL(ticker=ticker, tb=j).save_table()
-                        print(f'{"_"*50} Updating of {str(ticker)} is done. {"_"*50}')
-                        print(f'{"_"*50} {ticker_loop} of {list_length} has been updated. {"_"*50}')
-                        tickers_list.remove(ticker)
-                        ticker_loop += 1
-                except sqlite3.Error as error:
-                    print("Error while connecting to sqlite", error)
-                except RuntimeError:
-                    runtime_loop += 1
-                    print(f'{"#"*41} Runtime error, proceeding to next loop: {runtime_loop}. {"#"*41}')
-                    break
-                finally:
-                    pass
-
-        print(f'{"#"*50} All updating is over. {"#"*50}')
-    def update_ticker(ticker):
-        '''Updating "Financial_Statements_SQL" of single ticker.
-
-        '''
-        # updating database with function "save_table" inside "FA_SQL" class
-        try:
-            Statements = ['BalanceSheet', 'CashFlow', 'IncomeStatement']
-            for j in Statements:
-                ex1 = FS_SQL(ticker=ticker, tb=j).save_table()
-        except sqlite3.Error as error:
-            print("Error while connecting to sqlite", error)
-        finally:
-            print('updating of '+str(ticker)+' is done')
 
 class FS_SQL(object):
     ''' FA - Financial Analysis of chosen company.
@@ -264,122 +207,10 @@ class FS_SQL(object):
             print('No errors occurred')
         #return(final_df)
 
-    def save_concated_table_from_FS_SQL(self):
-        list1 = get_tickers_list_in_db(name='Financial_Statements_SQL.db')
-        list2 = get_tickers_list_in_db(name='Full_Financial_Statements.db')
-        tickers_list = [x for x in list1 if x not in list2]
-        list_length = len(tickers_list)
-        main_loop = 1
-        runtime_loop = 1
-        ticker_loop = 1
-        error_counter = 0
-        error_list = []
-        remaining_tickers_list = tickers_list.copy()
-        # loop
-        while tickers_list and main_loop < 4:
-            print(f'loop {main_loop}')
-            for x in tickers_list:
-                try:
-                    with timeout(200):
-                        bs = pd.read_sql_query("SELECT * FROM " + x + "_BalanceSheet",
-                                               sqlite3.connect('Financial_Statements_SQL.db'))
-                        bs['Date'] = pd.to_datetime(bs['Date']).dt.date
-                        bs = bs.set_index('Date')
-
-                        ist = pd.read_sql_query("SELECT * FROM " + x + "_IncomeStatement",
-                                                sqlite3.connect('Financial_Statements_SQL.db'))
-                        ist['Date'] = pd.to_datetime(ist['Date']).dt.date
-                        ist = ist.set_index('Date')
-
-                        cf = pd.read_sql_query("SELECT * FROM " + x + "_CashFlow",
-                                               sqlite3.connect('Financial_Statements_SQL.db'))
-                        cf['Date'] = pd.to_datetime(cf['Date']).dt.date
-                        cf = cf.set_index('Date')
-
-                        # get positions of financial statements
-                        bs_col = list(bs.columns)
-                        cf_col = list(cf.columns)
-                        ist_col = list(ist.columns)
-
-                        # concat Balance Sheet, Cash Flow, Income Statement
-                        bs = bs.drop_duplicates()
-                        cf = cf.drop_duplicates()
-                        ist = ist.drop_duplicates()
-                        df = pd.concat([bs, cf, ist], axis=1)
-                        df = df.loc[:, ~df.columns.duplicated()]
-                        df['Type'] = df['Type'].fillna('TTM')
-                        df = df.fillna(0)
-
-                        # column order
-                        cols_at_start = ['Ticker', 'Type']
-                        df = df[[c for c in df if c in cols_at_start]
-                                            + [c for c in df if c not in cols_at_start]]
-
-                        # Adding number of shares
-                        yahoo_financials = YahooFinancials(x)
-                        shares = yahoo_financials.get_num_shares_outstanding(price_type='average')
-                        df['shares'] = shares
-
-                        # Add ticker values
-                        price_df = \
-                        si.get_data(x, '2017-09-29', datetime.datetime.today(), index_as_date=True, interval='1d')[
-                            'adjclose']
-                        idx = pd.date_range('2017-09-29', datetime.datetime.today())
-                        price_df = price_df.reindex(idx).fillna(method='ffill')
-                        final_df = pd.merge(df, price_df, left_index=True, right_index=True, how='left')
-                        final_df = final_df.rename(columns={'adjclose': 'adjClose'})
-                        final_df['futureAdjClose'] = final_df['adjClose'].shift(-1)
-
-                        # Add index values
-                        if x in get_SP500_tickers_list():
-                            price_df = \
-                            si.get_data('^GSPC', '2017-09-29', datetime.datetime.today(), index_as_date=True, interval='1d')[
-                                'adjclose']
-                            idx = pd.date_range('2017-09-29', datetime.datetime.today())
-                            price_df = price_df.reindex(idx).fillna(method='ffill')
-                            final_df = pd.merge(final_df, price_df, left_index=True, right_index=True, how='left')
-                            final_df = final_df.rename(columns={'adjclose': 'indexAdjClose'})
-                            final_df['futureIndexAdjClose'] = final_df['indexAdjClose'].shift(-1)
-                        else:
-                            print('Unknown Index')
-                        cols_at_start = ['Ticker', 'Type']
-                        final_df = final_df[[c for c in final_df if c in cols_at_start]
-                                            + [c for c in final_df if c not in cols_at_start]]
-                        ## save table
-                        # connecting to database
-                        sqlite_connection = create_engine('sqlite:///Full_Financial_Statements.db', echo=False).connect()
-                        # replacing table in database
-                        final_df.to_sql((x + '_FFS'), sqlite_connection, index_label='Date', if_exists='replace')
-
-                        # print if succeeded
-                        print(datetime.datetime.now().strftime("%d.%b %Y %H:%M:%S"))
-                        print(f'{"_" * 50} Loading of {str(x)} is done. {"_" * 50}')
-                        print(f'{"_" * 50} {ticker_loop} of {list_length} has been updated. {"_" * 50}')
-                        remaining_tickers_list.remove(x)
-                        ticker_loop += 1
-
-                except RuntimeError:
-                    runtime_loop += 1
-                    error_counter += 1
-                    print(f'{"#" * 41} Runtime error, proceeding to next loop: {runtime_loop}. {"#" * 41}')
-                    #tickers_list = remaining_tickers_list.copy()  # function copy for testing purpose
-                    break
-
-                except:
-                    error_counter += 1
-                    print(f'{"#" * 41} Error occure on {x}. {len(remaining_tickers_list)} tickers have left. {"#" * 30}')
-                    error_list.append(x)
-            main_loop += 1
-            tickers_list = remaining_tickers_list.copy()
-        # final print
-        if error_list:
-            print(f'Errors occurred on : {set(error_list)}')
-        else:
-            print('No errors occurred')
 #if __name__ == '__main__':
 #    ex1 = FS_SQL('AAPL', 'BalanceSheet')
 #    print(ex1.getList())
 #FS_SQL().save_many_tables(get_SP500_tickers_list()[:2])
 #FS_SQL().load_concated_table_from_FS_SQL()
-FS_SQL().save_concated_table_from_FS_SQL()
+#FS_SQL().save_concated_table_from_FS_SQL()
 

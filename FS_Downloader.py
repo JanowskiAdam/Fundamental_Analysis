@@ -298,6 +298,7 @@ class FS_Downloader(object):
         shares = yahoo_financials.get_num_shares_outstanding(price_type='average')
         df['shares'] = shares
 
+        '''
         # Add ticker values
         price_df = si.get_data(self.ticker, '2017-09-29', datetime.datetime.today(), index_as_date=True, interval='1d')['adjclose']
         idx = pd.date_range('2017-09-29', datetime.datetime.today())
@@ -305,7 +306,7 @@ class FS_Downloader(object):
         final_df = pd.merge(df, price_df, left_index=True, right_index=True, how='left')
         final_df = final_df.rename(columns={'adjclose': 'adjClose'})
         final_df['futureAdjClose'] = final_df['adjClose'].shift(-1)
-
+        
         # Add index values
         if self.ticker in get_SP500_tickers_list():
             price_df = si.get_data('^GSPC', '2017-09-29', datetime.datetime.today(), index_as_date=True, interval='1d')['adjclose']
@@ -316,7 +317,7 @@ class FS_Downloader(object):
             final_df['futureIndexAdjClose'] = final_df['indexAdjClose'].shift(-1)
         else:
             print('Unknown Index')
-
+        '''
 
         return final_df, bs_col, cf_col, ist_col
 
